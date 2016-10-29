@@ -1,44 +1,66 @@
 #!/bin/env ruby
 # encoding: utf-8
+
+# действия:
+# поиграть
+# наказать
+# покормить
+# уложить спать
+# покупать
+
+# метрики:
+# желание спать = да/нет
+#   состояние сна (1..3, 4..10)
+# сытость (1..10)
+# настроение(1..10)
+# нужда туалета(1..3, 4..10) да/нет
+
 use Rack::Static, :urls => ["/media"]
 
 class App
-  # $LOAD_PATH << '.'
-  # require 'cow'
 
   class Cow
-
-    attr_accessor :name, :stuffInBelly, :mood
+    attr_reader :name, :stuff_in_belly, :mood, :sleep, :toilet
+    attr_accessor :exit_, :message
 
     def initialize name
       @name = name
-      @sleep = false
-      @stuffInBelly = 10  #  Он сыт.
-      @toilet =  0  #  Ему не надо гулять.
-      @mood = 10
+      @sleep = false      #желание сна
+      @count_sleep = 10   #колличество бодрстволвания
+      @stuff_in_belly = 10  #  желудок
+      @toilet =  false
+      @count_toilet =  0  #  кишечник
+      @mood = 10          # Настроение
+      @exit_ = false
+      @message = ''
     end
 
     def feed
-      @stuffInBelly = 10
-      passageOfTime
+      @stuff_in_belly = 10
+      passage_of_time
     end
 
     def walk
       @mood = 10
-      passageOfTime
+      passage_of_time
     end
 
     def put_to_bed
-      @asleep = true
-      3.times do
-        if @sleep
-          passageOfTime
-        end
-      end
-      if @sleep
-        @sleep = false
-      end
+      @sleep = false
+      3.times { passage_of_time }
     end
+
+    def go_to_wind
+      @count_toilet = 0
+      @toilet = false
+      passage_of_time
+    end
+
+    def push
+      @mood -= 1
+      passage_of_time
+    end
+
 
     private
 
@@ -50,66 +72,162 @@ class App
         #  Имена методов могут заканчиваться знаком "?".
         #  Как правило, мы называем так только, если метод
         #  возвращает true или false, как здесь:
-        @stuffInBelly <= 2
+        @stuff_in_belly <= 2
+      end
+
+      def mood?
+        @mood == 0
       end
 
       def toilet?  #  кишечник полон?
-        @toilet >= 8
+        @count_toilet >= 8
       end
 
-      def passageOfTime # проходит некоторое время
-        if @stuffInBelly > 0
+      def passage_of_time # проходит некоторое время
+        @message = ''
+
+        if @stuff_in_belly > 0
           #  Переместить пищу из желудка в кишечник.
-          @stuffInBelly     -= 1
-          @toilet += 1
+          @stuff_in_belly -= 1
+          @count_toilet += 1
         else  #  Наш дракон страдает от голода!
           if @sleep
             @sleep = false
           end
-          @message =  @name + ' проголодался! Доведённый до крайности, он съедает ВАС!'
-          exit  #  Этим методом выходим из программы.
+          @message +=  @name + ' голодная корова убежала от вас в лес'
+          @exit_ = true
         end
 
-        if @stuffInIntestine >= 10
-          @stuffInIntestine = 0
-          @message =  'Опаньки!  ' + @name + ' сделал нехорошо...'
+        if @count_toilet >= 10
+          @count_toilet = 0
+          @message +=  'Опаньки!  ' + @name + ' сделала нехорошо...'
         end
 
         if hungry?
-          if @asleep
-            @asleep = false
-            @message =  'Он внезапно просыпается!'
+          if @sleep
+            @sleep = false
+            @message +=  'Она внезапно просыпается!'
           end
-          @message =  'В желудке у ' + @name + '(а) урчит...'
+          @message +=  'В желудке у ' + @name + '(а) урчит...'
         end
 
-        if poopy?
-          if @asleep
-            @asleep = false
-            @message =  'Он внезапно просыпается!'
+        if mood?
+          @mood -= 1
+          @message += 'Корова от злости вас забодала'
+          @exit_ = true
+        end
+
+        if toilet?
+          if @sleep
+            @sleep = false
+            @message +=  'Он внезапно просыпается!'
           end
-          @message =  @name + ' подпрыгивает, потому что хочет на горшок...'
+          @message +=  @name + ' подпрыгивает, потому что хочет на горшок...'
         end
       end
   end
 
   def call(env)
-    cow = Cow.new('Muuu')
     req = Rack::Request.new(env)
+    links = "<a href='/walk' >Выгулять      </a>
+             <a href='/feed' >Кормить      </a>
+             <a href='/put_to_bed' >Уложить спать      </a>
+             <a href='/go_to_wind' >Сводить в туалет      </a>
+             <a href='/push' >Стукнуть      </a><br>"
+
     case req.path_info
+    when /index/
+      @@cow = Cow.new('Cowy')
+      [200, {"Content-Type" => "text/html"}, [links, "Name of our cow is _#{@@cow.name}_","<br>",
+                                              "cow want sleep: #{@@cow.sleep}","<br>",
+                                              "cow want eat: #{@@cow.stuff_in_belly}","<br>",
+                                              "cow want go to wind: #{@@cow.toilet}","<br>",
+                                              "cow mood: #{@@cow.mood}","<br>",
+                                              "<img src='/media/cowy.jpg' height='150' width='150' alt='тут фотка коровы'>",
+                                              "<br><b>",@@cow.message,"<br><b>"]]
 
-    when /status/
 
-      [200, {"Content-Type" => "text/html"}, ["#{cow.name}","cow mood: ","<br>","<img src='/media/cowy.jpg' alt='тут фотка коровы'>"]]
-
+    when /walk/
+      if @@cow.exit_
+              [404, {"Content-Type" => "text/html"}, ["<a href='/index' >Вырастить новую коровку      </a>",
+                                                      "<img src='/media/go_to_les.jpg' height='150' width='150' alt='тут фотка коровы'>","<br>",
+                                                      "<br><b>",@@cow.message,"<br><b>"]]
+      end
+      @@cow.walk
+      [200, {"Content-Type" => "text/html"}, [links,"Name of our cow is _#{@@cow.name}_","<br>",\
+                                              "cow want sleep: #{@@cow.sleep}","<br>",
+                                              "cow want eat: #{@@cow.stuff_in_belly}","<br>",
+                                              "cow want go to wind: #{@@cow.toilet}","<br>",
+                                              "cow mood: #{@@cow.mood}","<br>",
+                                              "<img src='/media/fun.jpg' height='150' width='150' alt='тут фотка коровы'>",
+                                            "<br><b>",@@cow.message,"<br><b>"]]
     when /feed/
-      # do something with your Cow
-      # store updated data to file || table || database || session
-      # and render to the web:
-      @@health += 1
-      [200, {"Content-Type" => "text/html"}, ["<a href='/feed'>Feed Cow</a>#{@@status_bar_template_example}","<br>#{@@health}"]]
+      if @@cow.exit_
+              [404, {"Content-Type" => "text/html"}, ["<a href='/index' >Вырастить новую коровку      </a>",
+                                                      "<img src='/media/go_to_les.jpg' height='150' width='150' alt='тут фотка коровы'>","<br>",
+                                                      "<br><b>",@@cow.message,"<br><b>"]]
+      end
+      @@cow.feed
+      [200, {"Content-Type" => "text/html"}, [links,"Name of our cow is _#{@@cow.name}_","<br>",\
+                                              "cow want sleep: #{@@cow.sleep}","<br>",
+                                              "cow want eat: #{@@cow.stuff_in_belly}","<br>",
+                                              "cow want go to wind: #{@@cow.toilet}","<br>",
+                                              "cow mood: #{@@cow.mood}","<br>",
+                                              "<img src='/media/feed.jpg' height='150' width='150' alt='тут фотка коровы'>",
+                                            "<br><b>",@@cow.message,"<br><b>"]]
+    when /put_to_bed/
+      if @@cow.exit_
+              [404, {"Content-Type" => "text/html"}, ["<a href='/index' >Вырастить новую коровку      </a>",
+                                                      "<img src='/media/go_to_les.jpg' height='150' width='150' alt='тут фотка коровы'>","<br>",
+                                                      "<br><b>",@@cow.message,"<br><b>"]]
+      end
+    @@cow.put_to_bed
+    [200, {"Content-Type" => "text/html"}, [links,"Name of our cow is _#{@@cow.name}_","<br>",\
+                                            "cow want sleep: #{@@cow.sleep}","<br>",
+                                            "cow want eat: #{@@cow.stuff_in_belly}","<br>",
+                                            "cow want go to wind: #{@@cow.toilet}","<br>",
+                                            "cow mood: #{@@cow.mood}","<br>",
+                                            "<img src='/media/sleep.jpg' height='150' width='150' alt='тут фотка коровы'>",
+                                            "<br><b>",@@cow.message,"<br><b>"]]
+    when /go_to_wind/
+      if @@cow.exit_
+              [404, {"Content-Type" => "text/html"}, ["<a href='/index' >Вырастить новую коровку      </a>",
+                                                      "<img src='/media/go_to_les.jpg' height='150' width='150' alt='тут фотка коровы'>","<br>",
+                                                      "<br><b>",@@cow.message,"<br><b>"]]
+      end
+    @@cow.go_to_wind
+    [200, {"Content-Type" => "text/html"}, [links,"Name of our cow is _#{@@cow.name}_","<br>",\
+                                            "cow want sleep: #{@@cow.sleep}","<br>",
+                                            "cow want eat: #{@@cow.stuff_in_belly}","<br>",
+                                            "cow want go to wind: #{@@cow.toilet}","<br>",
+                                            "cow mood: #{@@cow.mood}","<br>",
+                                            "<img src='/media/toilet.gif' height='150' width='150' alt='тут фотка коровы'>",
+                                            "<br><b>",@@cow.message,"<br><b>"]]
+    when /push/
+      if @@cow.exit_
+              [404, {"Content-Type" => "text/html"}, ["<a href='/index' >Вырастить новую коровку      </a>",
+                                                      "<img src='/media/go_to_les.jpg' height='150' width='150' alt='тут фотка коровы'>","<br>",
+                                                      "<br><b>", @@cow.message, "<br><b>"]]
+      else
+        @@cow.push
+        [200, {"Content-Type" => "text/html"}, [links,"Name of our cow is _#{@@cow.name}_","<br>",\
+                                            "cow want sleep: #{@@cow.sleep}","<br>",
+                                            "cow want eat: #{@@cow.stuff_in_belly}","<br>",
+                                            "cow want go to wind: #{@@cow.toilet}","<br>",
+                                            "cow mood: #{@@cow.mood}","<br>",
+                                            "<img src='/media/push.jpg' height='150' width='150' alt='тут фотка коровы'>",
+                                            "<br><b>",@@cow.message,"<br><b>"]]
+      end
+
     else
-      [404, {"Content-Type" => "text/html"}, ["I'm Lost!"]]
+      @@cow.message = 'Коровка не понимает что вы от неё хотите'
+      [404, {"Content-Type" => "text/html"}, [links,"Name of our cow is _#{@@cow.name}_","<br>",\
+                                            "cow want sleep: #{@@cow.sleep}","<br>",
+                                            "cow want eat: #{@@cow.stuff_in_belly}","<br>",
+                                            "cow want go to wind: #{@@cow.toilet}","<br>",
+                                            "cow mood: #{@@cow.mood}","<br>",
+                                            "<img src='/media/to_moon.jpg' height='150' width='150' alt='тут фотка коровы'>","<br>",
+                                            "<br><b>",@@cow.message,"<br><b>"]]
     end
   end
 end
